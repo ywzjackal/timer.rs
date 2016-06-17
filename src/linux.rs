@@ -250,11 +250,38 @@ extern {
     fn pthread_attr_init(_pthread_attr: *mut pthread_attr_t) -> c_int;
     fn pthread_attr_setschedparam(_pthread_attr: *mut pthread_attr_t, _sched_param_t: *const sched_param_t) -> c_int;
     //
+    fn clock_gettime(_clock_id: c_int, _time_spec: *mut timespec_t) -> c_int;
+    fn clock_settime(_clock_id: c_int, _time_spec: *const timespec_t) -> c_int;
+    //
     fn timer_create(_clock_id: c_int, _sigevent_t: *mut sigevent_t, _timer_t: *mut TimerId) -> c_int;
     fn timer_delete(_timer_t: TimerId) -> c_int;
     fn timer_settime(_timer_t: TimerId, _flags: c_int, _itimerspec: *const itimerspec_t, _ovalue: *mut itimerspec_t) -> c_int;
     fn timer_getoverrun(_timer_t: TimerId) -> c_int;
     //
+}
+
+pub fn set_os_real_time(sec: i64, nsec: i64) -> Result<()> {
+    let spec = timespec_t::new(sec as c_long, nsec as c_long);
+    let rt = unsafe {
+        clock_settime(CLOCK_REALTIME, &spec)
+    };
+    if rt != 0 {
+        Err(Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+pub fn get_os_real_time() -> Result<(i64, i64)> {
+    let mut spec = timespec_t::new(0, 0);
+    let rt = unsafe {
+        clock_gettime(CLOCK_REALTIME, &mut spec)
+    };
+    if rt != 0 {
+        Err(Error::last_os_error())
+    } else {
+        Ok((spec.tv_sec as i64, spec.tv_nsec as i64))
+    }
 }
 
 #[test]
