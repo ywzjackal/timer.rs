@@ -49,7 +49,6 @@ fn get_thread_id() -> pthread_t {
 pub struct Timer {
     timer_id: TimerId,
     tx: Sender<u32>,
-    rx: Receiver<u32>,
 }
 
 extern "C" fn cb(timer: CallbackFunctionParam) {
@@ -62,13 +61,12 @@ extern "C" fn cb(timer: CallbackFunctionParam) {
 
 impl Timer {
     // Create an empty Timer Struct
-    pub fn new() -> Timer {
+    pub fn new() -> (Timer, Receiver<u32>) {
         let (tx, rx) = channel();
-        Timer {
+        (Timer {
             timer_id: 0,
             tx: tx,
-            rx: rx,
-        }
+        }, rx)
     }
 
     // Setup timer in ticker mode.
@@ -127,11 +125,6 @@ impl Timer {
     // Get timer id
     pub fn get_id(&self) -> u64 {
         self.timer_id as u64
-    }
-
-    // Get rx channel
-    pub fn rx(&mut self) -> &mut Receiver<u32> {
-        &mut self.rx
     }
 }
 #[allow(drop_with_repr_extern)]
@@ -266,12 +259,12 @@ extern {
 
 #[test]
 fn test_pthread_attr_init() {
-    let mut timer = Timer::new();
+    let (mut timer, rx) = Timer::new();
     timer.ticker(CLOCK_REALTIME, 10).unwrap();
     assert!(timer.get_id() != 0);
     timer.start_reltime(Duration::from_millis(640), Duration::from_secs(3)).unwrap();
     for _ in 0..5 {
-        let overrun = timer.rx().recv().unwrap();
+        let overrun = rx.recv().unwrap();
         println!("overrun:{}", overrun);
     }
 }

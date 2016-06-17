@@ -6,12 +6,12 @@ only for linux with libc.
 # Example
 
 ```rust
-let mut timer = Timer::new();
-timer.ticker(CLOCK_REALTIME, 99).unwrap();
+let (mut timer, rx) = Timer::new();
+timer.ticker(CLOCK_REALTIME, 10).unwrap();
 assert!(timer.get_id() != 0);
 timer.start_reltime(Duration::from_millis(640), Duration::from_secs(3)).unwrap();
 for _ in 0..5 {
-    let overrun = timer.rx().recv().unwrap();
+    let overrun = rx.recv().unwrap();
     println!("overrun:{}", overrun);
 }
 ```
