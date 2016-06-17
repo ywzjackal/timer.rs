@@ -150,6 +150,19 @@ struct sched_param_t {
 
 impl sched_param_t {
     fn new(priority: i32) -> sched_param_t {
+        let mut priority = priority;
+        let min = unsafe {
+            sched_get_priority_min(SCHED_FIFO)
+        };
+        let max = unsafe {
+            sched_get_priority_max(SCHED_FIFO)
+        };
+        if priority > max {
+            priority = max;
+        }
+        if priority < min {
+            priority = min;
+        }
         sched_param_t {
             sched_priority: priority,
         }
@@ -187,11 +200,11 @@ impl sigevent_t {
         };
         let mut sched_param = sched_param_t::new(priority);
         unsafe {
-            //            let rt = sched_setscheduler(0, SCHED_FIFO, &mut sched_param);
-            //            assert_eq!(rt, 0);
+            let rt = sched_setscheduler(0, SCHED_FIFO, &mut sched_param);
+            assert_eq!(rt, 0);
             let rt = pthread_attr_init(sigevent.attribute);
             assert_eq!(rt, 0);
-            let rt = pthread_attr_setschedparam(sigevent.attribute, &mut sched_param);
+            let rt = pthread_attr_setschedparam(sigevent.attribute, &sched_param);
             if rt != 0 {
                 println!("`pthread_attr_setschedparam` return {}", rt);
             }
@@ -237,11 +250,12 @@ impl itimerspec_t {
 }
 
 extern {
-    fn perror();
     //
+    fn sched_get_priority_max(_policy: c_int) -> c_int;
+    fn sched_get_priority_min(_policy: c_int) -> c_int;
     fn sched_setscheduler(_pid_t: c_int, _policy: c_int, _sched_param_t: *mut sched_param_t) -> c_int;
     fn pthread_attr_init(_pthread_attr: *mut pthread_attr_t) -> c_int;
-    fn pthread_attr_setschedparam(_pthread_attr: *mut pthread_attr_t, _sched_param_t: *mut sched_param_t) -> c_int;
+    fn pthread_attr_setschedparam(_pthread_attr: *mut pthread_attr_t, _sched_param_t: *const sched_param_t) -> c_int;
     //
     fn timer_create(_clock_id: c_int, _sigevent_t: *mut sigevent_t, _timer_t: *mut TimerId) -> c_int;
     fn timer_delete(_timer_t: TimerId) -> c_int;
@@ -253,7 +267,7 @@ extern {
 #[test]
 fn test_pthread_attr_init() {
     let mut timer = Timer::new();
-    timer.ticker(CLOCK_REALTIME, 99).unwrap();
+    timer.ticker(CLOCK_REALTIME, 10).unwrap();
     assert!(timer.get_id() != 0);
     timer.start_reltime(Duration::from_millis(640), Duration::from_secs(3)).unwrap();
     for _ in 0..5 {
