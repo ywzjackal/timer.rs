@@ -5,3 +5,4 @@ authors = ["jackal <ywzjackal@163.com>"]
 
 [dependencies]
 libc = "*"
+log = "*"

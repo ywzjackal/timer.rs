@@ -3,6 +3,7 @@ use std::sync::mpsc::{channel, Sender, Receiver};
 use std::time::Duration;
 use std::io::{Result, Error};
 use std::ops::Drop;
+use log;
 use libc::{c_int, c_long, pthread_t, pthread_self};
 
 const SIGEV_SIGNAL: i32 = 0;
@@ -73,7 +74,7 @@ impl Timer {
     pub fn ticker(&mut self, clock_type: i32, policy: i32) -> Result<()> {
         let mut pthread_attr = pthread_attr_t::new();
         let timer_id_ptr: *mut TimerId = &mut self.timer_id;
-        let mut sigevent = sigevent_t::with_callback(cb, self, policy, &mut pthread_attr);
+        let mut sigevent = sigevent_t::with_callback(cb, self, policy, &mut pthread_attr).unwrap();
         if unsafe {
             timer_create(clock_type, &mut sigevent, timer_id_ptr)
         } != 0 {
@@ -127,7 +128,7 @@ impl Timer {
         self.timer_id as u64
     }
 }
-#[allow(drop_with_repr_extern)]
+
 impl Drop for Timer {
     fn drop(&mut self) {
         if unsafe { timer_delete(self.timer_id) } != 0 {
@@ -183,7 +184,7 @@ struct sigevent_t {
 }
 
 impl sigevent_t {
-    fn with_callback(cb: extern fn(CallbackFunctionParam), param: CallbackFunctionParam, priority: i32, attr: *mut pthread_attr_t) -> sigevent_t {
+    fn with_callback(cb: extern fn(CallbackFunctionParam), param: CallbackFunctionParam, priority: i32, attr: *mut pthread_attr_t) -> Result<sigevent_t> {
         let sigevent = sigevent_t {
             sigev_value: param,
             sigev_signo: 0,
@@ -193,16 +194,23 @@ impl sigevent_t {
         };
         let mut sched_param = sched_param_t::new(priority);
         unsafe {
+            
             let rt = sched_setscheduler(0, SCHED_FIFO, &mut sched_param);
-            assert_eq!(rt, 0);
+            if rt != 0 {
+                warn!("`sched_setscheduler` return {}", rt);
+                return Err(Error::last_os_error());
+            }
             let rt = pthread_attr_init(sigevent.attribute);
-            assert_eq!(rt, 0);
+            if rt != 0 {
+                warn!("`pthread_attr_init` return {}", rt);
+                return Err(Error::last_os_error());
+            }
             let rt = pthread_attr_setschedparam(sigevent.attribute, &sched_param);
             if rt != 0 {
-                println!("`pthread_attr_setschedparam` return {}", rt);
+                warn!("`pthread_attr_setschedparam` return {}", rt);
             }
         }
-        sigevent
+        Ok(sigevent)
     }
 }
 
@@ -287,7 +295,7 @@ pub fn get_os_real_time() -> Result<(i64, i64)> {
 #[test]
 fn test_pthread_attr_init() {
     let (mut timer, rx) = Timer::new();
-    timer.ticker(CLOCK_REALTIME, 10).unwrap();
+    timer.ticker(CLOCK_REALTIME, 80).unwrap();
     assert!(timer.get_id() != 0);
     timer.start_reltime(Duration::from_millis(640), Duration::from_secs(3)).unwrap();
     for _ in 0..5 {
