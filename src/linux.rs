@@ -266,6 +266,7 @@ extern {
     fn timer_settime(_timer_t: TimerId, _flags: c_int, _itimerspec: *const itimerspec_t, _ovalue: *mut itimerspec_t) -> c_int;
     fn timer_getoverrun(_timer_t: TimerId) -> c_int;
     //
+    fn adjtime(delta: *mut timeval, olddelta: *mut timeval) -> c_int;
 }
 
 pub fn set_os_real_time(sec: i64, nsec: i64) -> Result<()> {
@@ -289,6 +290,29 @@ pub fn get_os_real_time() -> Result<(i64, i64)> {
         Err(Error::last_os_error())
     } else {
         Ok((spec.tv_sec as i64, spec.tv_nsec as i64))
+    }
+}
+
+#[repr(C)]
+struct timeval {
+    tv_sec: i32,
+    tv_usec: i32,
+}
+// adjust system time with ms. return old timeval(ms)
+pub fn adjust_os_time(duration_ms: i32) -> i32 {
+    let mut ti = timeval {
+        tv_sec: 0,
+        tv_usec: duration_ms * 1000,
+    };
+
+    let mut old = timeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
+
+    unsafe {
+        let rt = adjtime(&mut ti, &mut old);
+        return rt;
     }
 }
 
