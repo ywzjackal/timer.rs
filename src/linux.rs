@@ -332,7 +332,7 @@ pub fn adjust_os_time(s: i32, us: i32) -> (i32, i32) {
 }
 
 #[test]
-fn test_pthread_attr_init() {
+fn test_timer() {
     use std::thread;
     use std::time::Duration;
     use std::sync::*;
