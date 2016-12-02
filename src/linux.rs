@@ -1,10 +1,9 @@
 #[link(name = "rt")]
-use std::sync::mpsc::{channel, Sender, Receiver};
+// use std::sync::mpsc::{channel, Sender, Receiver};
 use std::time::Duration;
 use std::io::{Result, Error};
 use std::ops::Drop;
-use log;
-use libc::{c_int, c_long, pthread_t, pthread_self};
+use libc::{c_int, c_long, pthread_t, pthread_self, c_void};
 
 const SIGEV_SIGNAL: i32 = 0;
 const SIGEV_NONE: i32 = 1;
@@ -40,42 +39,52 @@ const CLOCK_TAI: i32 = 11;
 const TIMER_ABSTIME: i32 = 1;
 
 type TimerId = c_long;
-type CallbackFunctionParam = *mut Timer;
+
+type CallbackFunctionParam = *mut c_void;
 
 fn get_thread_id() -> pthread_t {
     unsafe { pthread_self() }
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
+#[repr(C)]
 pub struct Timer {
     timer_id: TimerId,
-    tx: Sender<u32>,
+    // tx: Sender<u32>,
+    cb: Box<Fn(i32)>,
 }
 
 extern "C" fn cb(timer: CallbackFunctionParam) {
+    let timer = timer as *mut Timer;
     if timer.is_null() {
         panic!("invalid cb param in timer callback fn!!");
     }
     let overrun = unsafe { timer_getoverrun((*timer).timer_id) };
-    unsafe { (*timer).tx.send(overrun as u32).unwrap() };
+    // unsafe { (*timer).tx.send(overrun as u32).unwrap() };
+    unsafe { ((*timer).cb)(overrun) };
 }
 
 impl Timer {
     // Create an empty Timer Struct
-    pub fn new() -> (Timer, Receiver<u32>) {
-        let (tx, rx) = channel();
-        (Timer {
+    pub fn new<T>(cb: T) -> Timer
+        where T: Fn(i32) + 'static
+    {
+        // let (tx, rx) = channel();
+        Timer {
             timer_id: 0,
-            tx: tx,
-        },
-         rx)
+            // tx: tx,
+            cb: Box::new(cb),
+        }
     }
 
     // Setup timer in ticker mode.
     pub fn ticker(&mut self, clock_type: i32, policy: i32) -> Result<()> {
         let mut pthread_attr = pthread_attr_t::new();
         let timer_id_ptr: *mut TimerId = &mut self.timer_id;
-        let mut sigevent = sigevent_t::with_callback(cb, self, policy, &mut pthread_attr).unwrap();
+        let mut sigevent = try!(sigevent_t::with_callback(cb,
+                                                          self as *mut Timer as *mut c_void,
+                                                          policy,
+                                                          &mut pthread_attr));
         if unsafe { timer_create(clock_type, &mut sigevent, timer_id_ptr) } != 0 {
             Err(Error::last_os_error())
         } else {
@@ -203,21 +212,9 @@ impl sigevent_t {
         };
         let mut sched_param = sched_param_t::new(priority);
         unsafe {
-
-            let rt = sched_setscheduler(0, SCHED_FIFO, &mut sched_param);
-            if rt != 0 {
-                warn!("`sched_setscheduler` return {}", rt);
-                return Err(Error::last_os_error());
-            }
-            let rt = pthread_attr_init(sigevent.attribute);
-            if rt != 0 {
-                warn!("`pthread_attr_init` return {}", rt);
-                return Err(Error::last_os_error());
-            }
-            let rt = pthread_attr_setschedparam(sigevent.attribute, &sched_param);
-            if rt != 0 {
-                warn!("`pthread_attr_setschedparam` return {}", rt);
-            }
+            sched_setscheduler(0, SCHED_FIFO, &mut sched_param);
+            pthread_attr_init(sigevent.attribute);
+            pthread_attr_setschedparam(sigevent.attribute, &sched_param);
         }
         Ok(sigevent)
     }
@@ -328,19 +325,28 @@ pub fn adjust_os_time(s: i32, us: i32) -> (i32, i32) {
     };
 
     unsafe {
-        let rt = adjtime(&mut ti, &mut old);
+        // let rt =
+        adjtime(&mut ti, &mut old);
         return (old.tv_sec, old.tv_usec);
     }
 }
 
 #[test]
 fn test_pthread_attr_init() {
-    let (mut timer, rx) = Timer::new();
-    timer.ticker(CLOCK_REALTIME, 80).unwrap();
-    assert!(timer.get_id() != 0);
-    timer.start_reltime(Duration::from_millis(640), Duration::from_secs(3)).unwrap();
-    for _ in 0..5 {
-        let overrun = rx.recv().unwrap();
-        println!("overrun:{}", overrun);
+    use std::thread;
+    use std::time::Duration;
+    use std::sync::*;
+    let counter = Arc::new(Mutex::new(0));
+    let counter1 = counter.clone();
+    let mut timer = Timer::new(move |overrun| {
+        println!("counter:{}, overrun:{}", *counter1.lock().unwrap(), overrun);
+        *counter1.lock().unwrap() += 1;
+    });
+    if let Ok(_) = timer.ticker(CLOCK_REALTIME, 50) {
+        assert!(timer.get_id() != 0);
+        if let Ok(_) = timer.start_reltime(Duration::from_millis(640), Duration::from_secs(1)) {
+            thread::sleep(Duration::from_millis(640 * 4 + 100));
+        }
     }
+    assert!(*counter.lock().unwrap() >= 2);
 }
