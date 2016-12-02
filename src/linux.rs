@@ -11,13 +11,43 @@ const SIGEV_NONE: i32 = 1;
 const SIGEV_THREAD: i32 = 2;
 const SIGEV_THREAD_ID: i32 = 4;
 
+pub enum SCHED {
+    Other = 0,
+    Fifo = 1,
+    Rr = 2,
+}
+
+impl SCHED {
+    fn to_i32(&self) -> i32 {
+        match self {
+            &SCHED::Other => 0,
+            &SCHED::Fifo => 1,
+            &SCHED::Rr => 2,
+        }
+    }
+}
+
+pub enum CLOCK {
+    RealTime = 0,
+    Monotonic = 1,
+}
+
+impl CLOCK {
+    fn to_i32(&self) -> i32 {
+        match self {
+            &CLOCK::RealTime => 0,
+            &CLOCK::Monotonic => 1,
+        }
+    }
+}
+
 const SCHED_OTHER: i32 = 0;
 const SCHED_FIFO: i32 = 1;
 const SCHED_RR: i32 = 2;
 
-pub const CLOCK_REALTIME: i32 = 0;
+const CLOCK_REALTIME: i32 = 0;
 // Monotonic system-wide clock.
-pub const CLOCK_MONOTONIC: i32 = 1;
+const CLOCK_MONOTONIC: i32 = 1;
 // High-resolution timer from the CPU.
 const CLOCK_PROCESS_CPUTIME_ID: i32 = 2;
 // Thread-specific CPU-time clock.
@@ -72,14 +102,15 @@ impl Timer {
     }
 
     // Setup timer in ticker mode.
-    pub fn ticker(&mut self, clock_type: i32, policy: i32) -> Result<()> {
+    pub fn ticker(&mut self, clock_type: CLOCK, sched: SCHED, policy: i32) -> Result<()> {
         let mut pthread_attr = pthread_attr_t::new();
         let timer_id_ptr: *mut TimerId = &mut self.timer_id;
         let mut sigevent = try!(sigevent_t::with_callback(cb,
                                                           self as *mut Timer as *mut c_void,
+                                                          sched.to_i32(),
                                                           policy,
                                                           &mut pthread_attr));
-        if unsafe { timer_create(clock_type, &mut sigevent, timer_id_ptr) } != 0 {
+        if unsafe { timer_create(clock_type.to_i32(), &mut sigevent, timer_id_ptr) } != 0 {
             Err(Error::last_os_error())
         } else {
             Ok(())
@@ -194,6 +225,7 @@ struct sigevent_t {
 impl sigevent_t {
     fn with_callback(cb: extern "C" fn(CallbackFunctionParam),
                      param: CallbackFunctionParam,
+                     sched: i32,
                      priority: i32,
                      attr: *mut pthread_attr_t)
                      -> Result<sigevent_t> {
@@ -206,7 +238,7 @@ impl sigevent_t {
         };
         let mut sched_param = sched_param_t::new(priority);
         unsafe {
-            sched_setscheduler(0, SCHED_FIFO, &mut sched_param);
+            sched_setscheduler(0, sched, &mut sched_param);
             pthread_attr_init(sigevent.attribute);
             pthread_attr_setschedparam(sigevent.attribute, &sched_param);
         }
@@ -337,7 +369,7 @@ fn test_timer() {
         println!("counter:{}, overrun:{}", *counter1.lock().unwrap(), overrun);
         *counter1.lock().unwrap() += 1;
     });
-    if let Ok(_) = timer.ticker(CLOCK_REALTIME, 50) {
+    if let Ok(_) = timer.ticker(CLOCK::Monotonic, SCHED::Other, 50) {
         assert!(timer.get_id() != 0);
         if let Ok(_) = timer.start_reltime(Duration::from_millis(640), Duration::from_secs(1)) {
             thread::sleep(Duration::from_millis(640 * 4 + 100));
