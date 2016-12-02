@@ -12,7 +12,8 @@ fn test_timer() {
     use std::sync::*;
     let counter = Arc::new(Mutex::new(0));
     let counter1 = counter.clone();
-    let mut timer = Timer::new(move |overrun| {
+    let mut timer = Timer::new();
+    timer.on_arrived.join(move |overrun| {
         println!("counter:{}, overrun:{}", *counter1.lock().unwrap(), overrun);
         *counter1.lock().unwrap() += 1;
     });

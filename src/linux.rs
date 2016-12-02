@@ -1,5 +1,6 @@
 #[link(name = "rt")]
 // use std::sync::mpsc::{channel, Sender, Receiver};
+use event::Holder;
 use std::time::Duration;
 use std::io::{Result, Error};
 use std::ops::Drop;
@@ -46,12 +47,10 @@ fn get_thread_id() -> pthread_t {
     unsafe { pthread_self() }
 }
 
-// #[derive(Debug)]
 #[repr(C)]
 pub struct Timer {
     timer_id: TimerId,
-    // tx: Sender<u32>,
-    cb: Box<Fn(i32)>,
+    pub on_arrived: Holder<i32>,
 }
 
 extern "C" fn cb(timer: CallbackFunctionParam) {
@@ -59,21 +58,16 @@ extern "C" fn cb(timer: CallbackFunctionParam) {
     if timer.is_null() {
         panic!("invalid cb param in timer callback fn!!");
     }
-    let overrun = unsafe { timer_getoverrun((*timer).timer_id) };
-    // unsafe { (*timer).tx.send(overrun as u32).unwrap() };
-    unsafe { ((*timer).cb)(overrun) };
+    let mut overrun = unsafe { timer_getoverrun((*timer).timer_id) };
+    unsafe { (*timer).on_arrived.invoke(&mut overrun) };
 }
 
 impl Timer {
     // Create an empty Timer Struct
-    pub fn new<T>(cb: T) -> Timer
-        where T: Fn(i32) + 'static
-    {
-        // let (tx, rx) = channel();
+    pub fn new() -> Timer {
         Timer {
             timer_id: 0,
-            // tx: tx,
-            cb: Box::new(cb),
+            on_arrived: Holder::new(),
         }
     }
 
@@ -338,7 +332,8 @@ fn test_timer() {
     use std::sync::*;
     let counter = Arc::new(Mutex::new(0));
     let counter1 = counter.clone();
-    let mut timer = Timer::new(move |overrun| {
+    let mut timer = Timer::new();
+    timer.on_arrived.join(move |overrun| {
         println!("counter:{}, overrun:{}", *counter1.lock().unwrap(), overrun);
         *counter1.lock().unwrap() += 1;
     });
