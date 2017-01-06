@@ -1,6 +1,6 @@
 [package]
 name = "timer"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["jackal <ywzjackal@163.com>"]
 
 [dependencies]

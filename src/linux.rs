@@ -88,8 +88,8 @@ extern "C" fn cb(timer: CallbackFunctionParam) {
     if timer.is_null() {
         panic!("invalid cb param in timer callback fn!!");
     }
-    let mut overrun = unsafe { timer_getoverrun((*timer).timer_id) };
-    unsafe { (*timer).on_arrived.invoke(&mut overrun) };
+    let overrun = unsafe { timer_getoverrun((*timer).timer_id) };
+    unsafe { (*timer).on_arrived.invoke(overrun) };
 }
 
 impl Timer {
