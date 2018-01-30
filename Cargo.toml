@@ -5,5 +5,4 @@ authors = ["jackal <ywzjackal@163.com>"]
 
 [dependencies]
 libc = "*"
-log = "*"
 event = {git = "https://github.com/ywzjackal/event.rs.git"}
